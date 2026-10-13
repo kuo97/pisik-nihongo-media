@@ -11,7 +11,7 @@ import datetime as dt, json, os, subprocess, sys, time, urllib.parse, urllib.req
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "kuo97/pisik-nihongo-media")
 GH = os.environ.get("GITHUB_TOKEN", "")
-IG = (os.environ.get("IG_TOKEN") or "").strip()
+IG = (os.environ.get("IG_TOKEN") or "").replace("﻿", "").strip()   # 윈도우 PowerShell 로 등록하면 BOM 이 붙는다
 PAGES = "https://kuo97.github.io/pisik-nihongo-media/"
 API = "https://graph.instagram.com/v21.0/"
 KST = dt.timezone(dt.timedelta(hours=9))
