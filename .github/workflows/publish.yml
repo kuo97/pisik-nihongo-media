@@ -1,0 +1,34 @@
+# 피식니혼고 인스타 12:30·21:00 클라우드 발행 (2026-10-13) — 노트북이 꺼져 있어도 나간다.
+# 주 트리거 = cron-job.org 가 12:25·12:50·20:55·21:20 KST 에 workflow_dispatch(mode=run) 호출
+#   (깃허브 자체 예약은 3~6시간 밀린다 — 찬작 10-03 경험). 아래 schedule 은 보조.
+# 스크립트가 발행 시각 전이면 기다리고, 이미 올린 건 건너뛰므로 여러 번 돌아도 한 번만 올라간다.
+name: pisik-publish
+on:
+  schedule:
+    - cron: "25 3 * * *"    # 12:25 KST
+    - cron: "55 11 * * *"   # 20:55 KST
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run = 큐 발행 / test = 토큰·호스팅만 시험(게시 안 함)"
+        default: "test"
+      name:
+        description: "(선택) 이 단어만 지금 바로 발행 (한글 발음)"
+        default: ""
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: pisik-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+        run: python .github/scripts/cloud_publish.py "${{ github.event.inputs.mode || 'run' }}" "${{ github.event.inputs.name }}"
