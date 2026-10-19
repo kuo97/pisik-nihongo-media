@@ -12,6 +12,8 @@ import datetime as dt, json, os, subprocess, sys, time, urllib.parse, urllib.req
 REPO = os.environ.get("GITHUB_REPOSITORY", "kuo97/pisik-nihongo-media")
 GH = os.environ.get("GITHUB_TOKEN", "")
 IG = (os.environ.get("IG_TOKEN") or "").replace("﻿", "").strip()   # 윈도우 PowerShell 로 등록하면 BOM 이 붙는다
+TH = (os.environ.get("THREADS_TOKEN") or "").replace("﻿", "").strip()   # 10-20 쓰레드 연결 — 없으면 쓰레드는 건너뜀
+TH_API = "https://graph.threads.net/v1.0/"
 PAGES = "https://kuo97.github.io/pisik-nihongo-media/"
 API = "https://graph.instagram.com/v21.0/"
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -110,6 +112,43 @@ def publish(url, caption):
     return ig("me/media_publish", {"creation_id": c["id"]})["id"]
 
 
+def th(path, data=None):
+    if data is None:
+        req = urllib.request.Request(TH_API + path + ("&" if "?" in path else "?") + "access_token=" + TH)
+    else:
+        req = urllib.request.Request(TH_API + path, data=urllib.parse.urlencode(dict(data, access_token=TH)).encode())
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("Threads %s: %s" % (e.code, e.read().decode()[:400]))
+
+
+def threads_post(rel, m):
+    """인스타가 올라간 뒤 쓰레드에 글 + 정답 카드 이미지. 실패해도 인스타 발행에는 영향 없다."""
+    if not TH or not m.get("threads"):
+        return None
+    name = "%d_%s.jpg" % (int(time.time()), rel["tag_name"])
+    try:
+        url = host(download(rel, "card.jpg", "_card.jpg"), name)
+        c = th("me/threads", {"media_type": "IMAGE", "image_url": url, "text": m["threads"]})
+        for _ in range(18):
+            time.sleep(10)
+            st = th(c["id"] + "?fields=status,error_message")
+            if st.get("status") == "FINISHED":
+                break
+            if st.get("status") in ("ERROR", "EXPIRED"):
+                raise RuntimeError("쓰레드 처리 실패: %s" % st.get("error_message"))
+        tid = th("me/threads_publish", {"creation_id": c["id"]})["id"]
+        print("  [쓰레드 OK] %s" % tid)
+        return tid
+    except Exception as e:
+        print("  [쓰레드 실패] %s" % e)
+        return "실패: " + str(e)[:200]
+    finally:
+        unhost(name)
+
+
 def record(m, status, **kw):
     try:
         L = json.load(open(LOG, encoding="utf-8"))
@@ -127,15 +166,15 @@ def patch_body(rel, m):
     gh("PATCH", "releases/%d" % rel["id"], {"body": json.dumps(m, ensure_ascii=False), "tag_name": rel["tag_name"]})
 
 
-def download(rel):
-    a = [x for x in rel.get("assets", []) if x["name"] == "video.mp4"]
+def download(rel, asset="video.mp4", out="_dl.mp4"):
+    a = [x for x in rel.get("assets", []) if x["name"] == asset]
     if not a:
-        raise RuntimeError("video.mp4 첨부 없음")
-    r = subprocess.run(["curl", "-sSL", "--fail", "-o", "_dl.mp4", "-H", "Authorization: Bearer " + GH,
+        raise RuntimeError(asset + " 첨부 없음")
+    r = subprocess.run(["curl", "-sSL", "--fail", "-o", out, "-H", "Authorization: Bearer " + GH,
                         "-H", "Accept: application/octet-stream", a[0]["url"]], capture_output=True, text=True)
     if r.returncode:
-        raise RuntimeError("영상 내려받기 실패: " + r.stderr[-200:])
-    return "_dl.mp4"
+        raise RuntimeError(asset + " 내려받기 실패: " + r.stderr[-200:])
+    return out
 
 
 def run(force=None):
@@ -174,7 +213,9 @@ def run(force=None):
             mid = publish(host(download(rel), name), m["caption"])
             m["done"] = mid
             patch_body(rel, m)                        # 먼저 적는다 — 중간에 죽어도 두 번 올리지 않게
-            record(m, "published", media_id=mid)
+            unhost(name)
+            tid = threads_post(rel, m)
+            record(m, "published", media_id=mid, threads=tid)
             print("  [OK] %s" % mid)
             gh("DELETE", "releases/%d" % rel["id"])
         except Exception as e:
@@ -189,6 +230,8 @@ def test_hosting():
     """게시 없이 Pages 호스팅·토큰만 시험한다 (mode=test)."""
     me = ig("me?fields=username")
     print("[OK] 토큰 계정:", me.get("username"))
+    if TH:
+        print("[OK] 쓰레드 계정:", th("me?fields=username").get("username"))
     open("_t.txt", "w").write("ok")
     name = "%d_hosting-test.txt" % int(time.time())
     try:
