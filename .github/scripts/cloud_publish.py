@@ -90,6 +90,22 @@ def host(local, name):
     raise RuntimeError("Pages 에 영상이 12분 안에 안 열렸다")
 
 
+def host_raw(local, name):
+    """이미지는 Pages 빌드를 기다리지 않고 원본 주소(raw)로 — 10-20 시험에서 쓰레드가 바로 받았다."""
+    os.makedirs("media", exist_ok=True)
+    os.replace(local, "media/" + name)
+    commit_push(["media"], "media: " + name)
+    url = "https://raw.githubusercontent.com/%s/main/media/%s" % (REPO, name)
+    for _ in range(12):
+        try:
+            if urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=15).status == 200:
+                return url
+        except Exception:
+            pass
+        time.sleep(5)
+    raise RuntimeError("이미지 원본 주소가 안 열렸다")
+
+
 def unhost(name):
     p = "media/" + name
     if os.path.exists(p):
@@ -130,7 +146,7 @@ def threads_post(rel, m):
         return None
     name = "%d_%s.jpg" % (int(time.time()), rel["tag_name"])
     try:
-        url = host(download(rel, "card.jpg", "_card.jpg"), name)
+        url = host_raw(download(rel, "card.jpg", "_card.jpg"), name)
         c = th("me/threads", {"media_type": "IMAGE", "image_url": url, "text": m["threads"]})
         for _ in range(18):
             time.sleep(10)
