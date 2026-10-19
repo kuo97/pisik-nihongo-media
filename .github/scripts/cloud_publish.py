@@ -103,7 +103,7 @@ def host_raw(local, name):
         except Exception:
             pass
         time.sleep(5)
-    raise RuntimeError("이미지 원본 주소가 안 열렸다")
+    raise RuntimeError("원본 주소가 1분 안에 안 열렸다")
 
 
 def unhost(name):
@@ -226,7 +226,7 @@ def run(force=None):
         print("▶ %s (%s) %s" % (m["name"], m["style"], m["due"]))
         name = "%d_%s.mp4" % (int(time.time()), rel["tag_name"])
         try:
-            mid = publish(host(download(rel), name), m["caption"])
+            mid = publish(host_raw(download(rel), name), m["caption"])   # 10-20: Pages 가 12분 넘게 밀린 날이 있어 원본 주소로(인스타 시험 통과)
             m["done"] = mid
             patch_body(rel, m)                        # 먼저 적는다 — 중간에 죽어도 두 번 올리지 않게
             unhost(name)
@@ -251,8 +251,8 @@ def test_hosting():
     open("_t.txt", "w").write("ok")
     name = "%d_hosting-test.txt" % int(time.time())
     try:
-        host("_t.txt", name)
-        print("[OK] 호스팅 시험 통과")
+        host_raw("_t.txt", name)
+        print("[OK] 호스팅 시험 통과(raw)")
     finally:
         unhost(name)
 
